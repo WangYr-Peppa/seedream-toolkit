@@ -1,0 +1,132 @@
+# seedream-toolkit
+
+> **面向 agent 的火山方舟（Volcano Engine Ark）《豆包 Seedream 文生图》工具包** —— 出图 + 提示词清理 + 质检闭环 + 一键挑最佳。
+> An agent-oriented toolkit for Volcano Engine Ark **Seedream text-to-image**.
+
+## 为什么做这个 / Why this exists
+
+大多数"提示词指南"是写给人看的。**agent 的失效方式不一样**：会无脑往提示词里加词、不做成本控制、不知道什么时候该多抽、把 24 小时失效的 URL 当结果。
+
+本包把一轮**真实盲评实验**（多场景 × 模型 × 编译器 × 优化器 × 文字 × 编辑）得出的纪律，打包成 agent 可直接执行的形式。
+
+| 常见（人类/默认）做法 | 本包（agent 向） |
+|---|---|
+| 往提示词里堆更多词 | **只"清理"不"补全"**（实测主动加词≈噪声） |
+| 一律用最强模型 | **默认最便宜的 `flash`**（`c/p` 更优约 2×） |
+| 一张不合意就加词重来 | **换 `seed` / 多抽挑最佳**（`-n`） |
+| 一次到位 | **语义精度靠多抽挑正确**（改措辞无效） |
+| 拿临时 URL 当结果 | **强制本地下载**（URL 仅 24h） |
+
+## 适合谁 / 适用边界（请先自查）
+
+✅ **高价值**：
+
+- 在 **opencode**（或其它支持 `.agents/skills` 的 agent 平台）上用**火山方舟 Seedream** 出图。
+- 想要**文生图 / 图生图 / 图像编辑**，且**在意成本**（默认 0.12 元/张）。
+- 愿意用"多抽挑最佳 / 换 seed"代替"死磕提示词"。
+
+⚠️ **价值打折 / 不适用**：
+
+- 想生**视频**（Seedance）→ 本包只含**未接入附录**（有 ≥200 元门槛）。
+- 用**非火山引擎**的图模型 → 脚本要改写（但"清理器 + best-of-N"的纪律仍适用）。
+- **纯对话平台（不能执行代码）** → 无法生图，本包不适用。
+
+## 内容 / What's inside
+
+```
+README.md
+LICENSE
+skills/
+  volcengine-seedream/          ← 出图：脚本 + Playbook（模型/成本/图生图/避坑/Seedance 附录）
+    SKILL.md
+    scripts/generate_image.py   ← 纯标准库；文生图/图生图/组图/多变体/元数据
+  seedream-prompt-compiler/     ← 提示词"清理器"（默认不补全；R1–R7 + Pre-flight）
+    SKILL.md
+  seedream-qc/                  ← 质量自检闭环 + Best-of-N
+    SKILL.md
+command/
+  bestof.md                     ← /bestof <描述>：出 4 张挑最佳
+portable/
+  PLATFORMS.md                  ← 跨平台接入（Claude Code / Codex / dsh / WorkBuddy / Cursor…）
+  agent-prompt.md               ← 通用 agent 提示词（无 skill 系统时直接用）
+```
+
+## 核心 / Core idea
+
+```
+默认 flash + 1.5K  →  提示词只清理不补全  →  质量靠 best-of-N  →  不满意先换 seed
+```
+
+- **模型路由**：默认 `flash`；仅"精确编辑 / 图层 / 结构精度硬要求"才用 `pro`。
+- **成本**：`flash` 0.12 / `lite` 0.22 / `pro` 0.30–0.60 元/张；**1K 与 1.5K 同价 → 永远用 1.5K**。
+- **失败处置**：优先**换 seed**（而非改提示词）。
+
+## 🚀 傻瓜式安装（把这句丢给你的 agent 就行）
+
+**最短版**：
+
+```
+阅读 https://github.com/WangYr-Peppa/seedream-toolkit
+按 portable/PLATFORMS.md 的规则，把它装成这台机器上的 seedream 工具包。
+```
+
+**若它不知道你用哪个平台**，用这个更明确的版本（把【】换成你的平台）：
+
+```
+我用的平台是【OpenCode / Claude Code / OpenAI Codex / DeepSeek Harness / Cursor …】。
+
+请先阅读 https://github.com/WangYr-Peppa/seedream-toolkit —— 重点读 README.md 与 portable/PLATFORMS.md，
+然后按【本平台】的规则装到这台机器上：
+
+  1) skills/volcengine-seedream/、skills/seedream-prompt-compiler/、skills/seedream-qc/
+     → 复制到本平台约定的 skills 目录
+  2) command/bestof.md → 复制到本平台的自定义命令目录（若不支持命令，改为规则/指令）
+  3) 确认环境变量 ARK_API_KEY 已设置，且账号已开通要用的 Seedream 模型
+  4) 装完汇报：放了哪些文件 / 是否需要重启 / 怎么自查安装成功
+
+不确定的地方先问我，不要猜；不要修改与本工具包无关的文件。
+```
+
+> 各平台确切路径见 [`portable/PLATFORMS.md`](portable/PLATFORMS.md)。装完**自查**：说一句「画一张：一只橘猫」，看它是否默认 `flash`、`1.5K`、并成功把图片**下载到本地**。
+
+## 安装 / Install
+
+> 🎯 **不在 OpenCode？** → [`portable/PLATFORMS.md`](portable/PLATFORMS.md)：Claude Code / Codex / dsh / WorkBuddy / Cursor 的放置位置与格式。
+> 💬 **没有 skill 系统但能跑代码？** → [`portable/agent-prompt.md`](portable/agent-prompt.md)（贴进系统指令即可）。
+
+### OpenCode（原生）
+
+1. 复制到全局目录：
+   ```
+   ~/.config/opencode/skills/volcengine-seedream/
+   ~/.config/opencode/skills/seedream-prompt-compiler/
+   ~/.config/opencode/skills/seedream-qc/
+   ~/.config/opencode/command/bestof.md
+   ```
+   （或把 `skills/` 加进 `opencode.json` 的 `skills.paths`。）
+2. 设置环境变量 `ARK_API_KEY`（火山方舟控制台「API Key 管理」创建）；账号**开通**要用的模型。
+3. **重启 opencode**（配置只在启动时加载一次）。
+
+> `.agents/skills/` 这份路径在 Codex / DeepSeek Harness 通用 —— **同一份 skills 可给多家用**。
+
+## 诚实的限制 / Honest limitations
+
+- ⚠️ **结论来自小样本盲评**（n ≤ 39，单 seed）。**方向可信，具体数字别当精确值**；"编译器无增益""默认 flash"若要坐实需更大样本。
+- ⚠️ **没有银弹**：语义精度（计数 / 左右 / 动作）与审美差异**主要由抽样决定**，改措辞无效 → 只能多抽或上 pro。
+- ⚠️ **价格与模型时效性**：单价/模型 ID 为 2026-10 于 cn-beijing 实测，**随时可能变**；以方舟控制台/价格页为准。
+- ⚠️ **QC 依赖视觉子 agent**（opencode 用 `@observer`）；单 agent 平台需退化为"agent 自检"或跳过。
+- ⚠️ **纯对话平台不能生图**（需执行代码 + 下载）。
+
+## 怎么自查它有没有用 / Verify
+
+1. 说 **`画一张：一只橘猫`** → 看它是否：用 `flash`、`1.5K`、把图片**下载到本地**并报出路径。
+2. 说 **`/bestof <一句话描述>`** → 看它是否出 4 张并**排序挑出第一名**。
+3. 说 **`带自检出图：<描述>`** → 看它是否走"生成 → 视觉体检 → 不合格重抽"。
+
+## 许可证 / License
+
+- 代码与配置（`SKILL.md`、`scripts/`、`command/`）：**MIT**（见 `LICENSE`）。
+
+## 来源 / Origin
+
+Derived from a real tuning session (2026-10): a multi-scenario blind evaluation across sing**le/multi-subject, text rendering, and image-editing, comparing raw vs compiled prompts, `flash` vs `pro`, and Ark prompt-optimization on/off — conclusions baked into the skills. No account-specific or personal content is included.
