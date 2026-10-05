@@ -16,7 +16,7 @@
 | 一张不合意就加词重来 | **换 `seed` / 多抽挑最佳**（`-n`） |
 | 一次到位 | **语义精度靠多抽挑正确**（改措辞无效） |
 | 拿临时 URL 当结果 | **强制本地下载**（URL 仅 24h） |
-| AI 写的提示词直接出图 | **出图前 Ask Gate**：先交你过目拍板，再花钱生成 |
+| AI 写的提示词直接出图 / 参数靠猜 | **出图前 Ask Gate**：提示词 + 出图参数（比例/参考图/张数/模型/分辨率）都交你拍板，再花钱 |
 
 ## 适合谁 / 适用边界（请先自查）
 
@@ -41,12 +41,15 @@ skills/
   volcengine-seedream/          ← 出图：脚本 + Playbook（模型/成本/图生图/避坑/Seedance 附录）
     SKILL.md
     scripts/generate_image.py   ← 纯标准库；文生图/图生图/组图/多变体/元数据
-  seedream-prompt-compiler/     ← 提示词"清理器"（默认不补全；R1–R7；出图前 Ask Gate 确认）
+  seedream-prompt-compiler/     ← 提示词"清理器" + Ask Gate（审提示词 + 审出图参数；R1–R7/R4.8）
     SKILL.md
   seedream-qc/                  ← 质量自检闭环 + Best-of-N
     SKILL.md
 command/
   bestof.md                     ← /bestof <描述>：出 4 张挑最佳
+  draw.md                       ← /draw <描述>：单张文生图（走闸门）
+  edit.md                       ← /edit <指令>：图生图 / 编辑（走闸门）
+  qc.md                         ← /qc <描述>：带自检出图闭环
 portable/
   PLATFORMS.md                  ← 跨平台接入（Claude Code / Codex / dsh / WorkBuddy / Cursor…）
   agent-prompt.md               ← 通用 agent 提示词（无 skill 系统时直接用）
@@ -55,13 +58,15 @@ portable/
 ## 核心 / Core idea
 
 ```
-清理提示词  →  🚦 你过目确认  →  默认 flash + 1.5K 出图  →  质量靠 best-of-N  →  不满意先换 seed
+清理提示词  →  🚦 你确认〔提示词 + 比例/参考图/张数/模型/分辨率〕  →  出图  →  质量靠 best-of-N  →  不满意先换 seed
 ```
 
 - **模型路由**：默认 `flash`；仅"精确编辑 / 图层 / 结构精度硬要求"才用 `pro`。
 - **成本**：`flash` 0.12 / `lite` 0.22 / `pro` 0.30–0.60 元/张；**1K 与 1.5K 同价 → 永远用 1.5K**。
 - **失败处置**：优先**换 seed**（而非改提示词）。
-- **出图前闸门（Ask Gate）**：提示词是 AI 写的、可能跑偏 → **生成前**把它交你拍板（`通过` / `改` / `本次直接出`），**获准才花钱**。
+- **出图前闸门（Ask Gate）**：生成前把**提示词**（通过 / 改）和**出图参数**（比例 / 参考图 / 单张或批量 / `flash` 或 `pro` / 分辨率）**逐项交你拍板**，每项带推荐默认、可"全部用推荐"，**获准才花钱**。
+- **预演不花钱**：任何出图都可先 `--dry-run` —— 校验参数是否自洽 + 打印**预估费用**，**不出图**。
+- **出图后自动预览**：成功后自动用系统看图打开（`--no-preview` 关闭）。
 
 ## 🚀 傻瓜式安装（把这句丢给你的 agent 就行）
 
@@ -82,7 +87,7 @@ portable/
 
   1) skills/volcengine-seedream/、skills/seedream-prompt-compiler/、skills/seedream-qc/
      → 复制到本平台约定的 skills 目录
-  2) command/bestof.md → 复制到本平台的自定义命令目录（若不支持命令，改为规则/指令）
+  2) command/*.md（bestof / draw / edit / qc）→ 复制到本平台的自定义命令目录（若不支持命令，改为规则/指令）
   3) 确认环境变量 ARK_API_KEY 已设置，且账号已开通要用的 Seedream 模型
   4) 装完汇报：放了哪些文件 / 是否需要重启 / 怎么自查安装成功
 
@@ -104,6 +109,9 @@ portable/
    ~/.config/opencode/skills/seedream-prompt-compiler/
    ~/.config/opencode/skills/seedream-qc/
    ~/.config/opencode/command/bestof.md
+   ~/.config/opencode/command/draw.md
+   ~/.config/opencode/command/edit.md
+   ~/.config/opencode/command/qc.md
    ```
    （或把 `skills/` 加进 `opencode.json` 的 `skills.paths`。）
 2. 设置环境变量 `ARK_API_KEY`（火山方舟控制台「API Key 管理」创建）；账号**开通**要用的模型。
@@ -122,10 +130,11 @@ portable/
 
 ## 怎么自查它有没有用 / Verify
 
-1. 说一句出图需求 → 看它是否**先停下来、把提示词交你过目**（通过 / 改 / 直接出），**而不是闷头直接出图**。
+1. 说一句出图需求 → 看它是否**先停下来**：把**提示词**交你过目，**并逐项问出图参数**（比例 / 参考图 / 单张或批量 / 模型 / 分辨率），**而不是闷头直接出图**。
 2. 说 **`画一张：一只橘猫`** → 看它是否：用 `flash`、`1.5K`、把图片**下载到本地**并报出路径。
 3. 说 **`/bestof <一句话描述>`** → 看它出图前是否先确认、并出 4 张**排序挑出第一名**。
 4. 说 **`带自检出图：<描述>`** → 看它是否走"确认 → 生成 → 视觉体检 → 不合格重抽"。
+5. 说出图需求后加一句 **`先 --dry-run 预演`** → 看它是否只校验参数并报**预估费用**、**不出图**。
 
 ## 许可证 / License
 
