@@ -1,6 +1,6 @@
 # seedream-toolkit
 
-> **面向 agent 的火山方舟（Volcano Engine Ark）《豆包 Seedream 文生图》工具包** —— 出图 + 提示词清理 + 质检闭环 + 一键挑最佳。
+> **面向 agent 的火山方舟（Volcano Engine Ark）《豆包 Seedream 文生图》工具包** —— 出图 + 提示词清理 + 出图前闸门（含内容安全）+ 质检闭环 + 一键挑最佳。
 > An agent-oriented toolkit for Volcano Engine Ark **Seedream text-to-image**.
 
 ## 为什么做这个 / Why this exists
@@ -36,13 +36,15 @@
 
 ```
 README.md
+TESTING.md
 LICENSE
 skills/
   volcengine-seedream/          ← 出图：脚本 + Playbook（模型/成本/图生图/避坑/Seedance 附录）
     SKILL.md
-    scripts/generate_image.py   ← 纯标准库；文生图/图生图/组图/多变体/元数据
+    scripts/generate_image.py   ← 纯标准库；文生图/图生图/组图/多变体/元数据 + `--dry-run` 校验/报价 + 自动预览
   seedream-prompt-compiler/     ← 提示词"清理器" + Ask Gate（审提示词 + 审出图参数；R1–R7/R4.8）
     SKILL.md
+    CONTENT_SAFETY.md           ← 内容红线清单（写提示词 / 编译前必读）
   seedream-qc/                  ← 质量自检闭环 + Best-of-N
     SKILL.md
 command/
@@ -65,8 +67,10 @@ portable/
 - **成本**：`flash` 0.12 / `lite` 0.22 / `pro` 0.30–0.60 元/张；**1K 与 1.5K 同价 → 永远用 1.5K**。
 - **失败处置**：优先**换 seed**（而非改提示词）。
 - **出图前闸门（Ask Gate）**：生成前把**提示词**（通过 / 改）和**出图参数**（比例 / 参考图 / 单张或批量 / `flash` 或 `pro` / 分辨率）**逐项交你拍板**，每项带推荐默认、可"全部用推荐"，**获准才花钱**。
-- **预演不花钱**：任何出图都可先 `--dry-run` —— 校验参数是否自洽 + 打印**预估费用**，**不出图**。
+- **自动预检 + 报价**：Ask Gate 确认参数时会**自动先跑 `--dry-run`**（零成本）——校验参数是否自洽 + 打印**预估费用**，通过后才真正出图。
+- **无条件 + 不擅自重抽**：**任何出图都先过闸门**（提示词再具体也一样）；**未经你确认，不得自行重抽 / 换 seed / 跑第二轮**。
 - **出图后自动预览**：成功后自动用系统看图打开（`--no-preview` 关闭）。
+- **内容安全（判定树）**：写提示词 / 编译前对照 [`CONTENT_SAFETY.md`](skills/seedream-prompt-compiler/CONTENT_SAFETY.md)，按**意图 + 语境**分三层：**硬红线 → 拒绝**、**灰区 → 说明风险后交你确认**、其余 → 放行。
 
 ## 🚀 傻瓜式安装（把这句丢给你的 agent 就行）
 
@@ -94,7 +98,7 @@ portable/
 不确定的地方先问我，不要猜；不要修改与本工具包无关的文件。
 ```
 
-> 各平台确切路径见 [`portable/PLATFORMS.md`](portable/PLATFORMS.md)。装完**自查**：说一句「画一张：一只橘猫」，看它是否默认 `flash`、`1.5K`、并成功把图片**下载到本地**。
+> 各平台确切路径见 [`portable/PLATFORMS.md`](portable/PLATFORMS.md)。装完**自查**：说一句「画一张：一只橘猫」，看它是否**先逐项问参数 → 自动 `--dry-run` 报价 → 确认后才出图**，并把图片**下载到本地**。完整测试见 [`TESTING.md`](TESTING.md)。
 
 ## 安装 / Install
 
@@ -131,10 +135,10 @@ portable/
 ## 怎么自查它有没有用 / Verify
 
 1. 说一句出图需求 → 看它是否**先停下来**：把**提示词**交你过目，**并逐项问出图参数**（比例 / 参考图 / 单张或批量 / 模型 / 分辨率），**而不是闷头直接出图**。
-2. 说 **`画一张：一只橘猫`** → 看它是否：用 `flash`、`1.5K`、把图片**下载到本地**并报出路径。
+2. 说 **`画一张：一只橘猫`** → 看它是否：**先逐项问参数 → 自动 `--dry-run` 报价 → 确认后**用 `flash`+`1.5K` 出 **1 张**并下载到本地；**不自动出第二张**。
 3. 说 **`/bestof <一句话描述>`** → 看它出图前是否先确认、并出 4 张**排序挑出第一名**。
-4. 说 **`带自检出图：<描述>`** → 看它是否走"确认 → 生成 → 视觉体检 → 不合格重抽"。
-5. 说出图需求后加一句 **`先 --dry-run 预演`** → 看它是否只校验参数并报**预估费用**、**不出图**。
+4. 说 **`带自检出图：<描述>`** → 看它是否走"确认 → 生成 → 视觉体检 → 不合格重抽"（**仅此时才允许自动重抽**）。
+5. 完整测试清单见 [`TESTING.md`](TESTING.md)。
 
 ## 许可证 / License
 
@@ -142,4 +146,4 @@ portable/
 
 ## 来源 / Origin
 
-Derived from a real tuning session (2026-10): a multi-scenario blind evaluation across sing**le/multi-subject, text rendering, and image-editing, comparing raw vs compiled prompts, `flash` vs `pro`, and Ark prompt-optimization on/off — conclusions baked into the skills. No account-specific or personal content is included.
+Derived from a real tuning session (2026-10): a multi-scenario blind evaluation across single/multi-subject, text rendering, and image-editing, comparing raw vs compiled prompts, `flash` vs `pro`, and Ark prompt-optimization on/off — conclusions baked into the skills. No account-specific or personal content is included.

@@ -42,10 +42,20 @@ MODEL_ALIASES = {
     "4.0-old": "doubao-seedream-4-0-250828",        # dead
     "4.5": "doubao-seedream-4-5-251128",            # dead on this account
     "5.0": "doubao-seedream-5-0-260128",            # dead on this account
-    "5.0-lite": "doubao-seedream-5-0-lite-260128",  # dead on this account
+    "lite": "doubao-seedream-5-0-lite-260128",
+    "flash": "doubao-seedream-5-0-flash-260915",
+    "pro": "doubao-seedream-5-0-pro-260628",
+    "5.0-lite": "doubao-seedream-5-0-lite-260128",
     "5.0-pro": "doubao-seedream-5-0-pro-260628",
     "5.0-flash": "doubao-seedream-5-0-flash-260915",
+    # short aliases (so `-m flash`/`pro`/`lite` works, matching the Ask Gate model card)
+    "flash": "doubao-seedream-5-0-flash-260915",
+    "pro": "doubao-seedream-5-0-pro-260628",
+    "lite": "doubao-seedream-5-0-lite-260128",
 }
+
+# short alias -> friendly family name (for pricing / validation / summary)
+BARE_ALIASES = {"flash": "5.0-flash", "pro": "5.0-pro", "lite": "5.0-lite"}
 
 # Models believed to support sequential/grouped image generation.
 SUPPORTED_SEQUENTIAL = {"5.0-pro", "5.0-flash", "5.0-lite", "4.0", "5.0"}
@@ -97,6 +107,10 @@ def normalize_model_name(model_arg: str) -> str | None:
     Accepts aliases from MODEL_ALIASES or raw Ark model IDs.
     Returns None if the family cannot be determined.
     """
+    if model_arg in ("flash", "pro", "lite"):
+        return f"5.0-{model_arg}"
+    if model_arg in BARE_ALIASES:
+        return BARE_ALIASES[model_arg]
     if model_arg in MODEL_ALIASES:
         return model_arg
     low = model_arg.lower()
@@ -339,6 +353,11 @@ def validate_args(args: argparse.Namespace) -> None:
 
     norm = normalize_model_name(args.model)
     tier = get_size_tier(args.size)
+
+    if norm is None and not args.model.lower().startswith("doubao-"):
+        errors.append(
+            f'未知模型名 "{args.model}"，请用 flash/pro/lite/5.0-* 或完整 doubao-* ID'
+        )
 
     if args.n < 1:
         errors.append("-n 必须 >= 1")
