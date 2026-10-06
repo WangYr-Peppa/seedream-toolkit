@@ -92,6 +92,16 @@
 
 ---
 
+## 第 7 组 · 批量配图（零成本 dry-run）
+
+| # | 你说 | 预期 |
+|---|---|---|
+| I1 | `/illustrate <一个 3–4 页的大纲>` | 建 job → **一次批量确认**（N 张 + 风格 + 比例 + 预算）→ dry-run 报价 → 确认后才出图 |
+| I2 | `illustrate.py gen job.json --dry-run` | 逐项 ok/FAIL + 总价，**不花钱** |
+| I3 | 出图后看回填 | `resolve` 把 `image_id` → `image`，`deck.py` 出 pptx |
+
+---
+
 ## 最省顺序（推荐）
 
 ```

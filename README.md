@@ -42,6 +42,8 @@ skills/
   volcengine-seedream/          ← 出图：脚本 + Playbook（模型/成本/图生图/避坑/Seedance 附录）
     SKILL.md
     scripts/generate_image.py   ← 纯标准库；文生图/图生图/组图/多变体/元数据 + `--dry-run` 校验/报价 + 自动预览
+    scripts/illustrate.py       ← 批量配图：job.json → 批量生图+报价 → result.json；并可回填 deck 规格
+    tests/                      ← 单测（标准库 unittest，无 API 调用）
   seedream-prompt-compiler/     ← 提示词"清理器" + Ask Gate（审提示词 + 审出图参数；R1–R7/R4.8）
     SKILL.md
     CONTENT_SAFETY.md           ← 内容红线清单（写提示词 / 编译前必读）
@@ -49,6 +51,7 @@ skills/
     SKILL.md
 command/
   draw.md                       ← /draw <描述>：出图统一入口（文生图 / 图生图·编辑 / 批量挑最佳 / 带自检 / 图→提示词，全走闸门）
+  illustrate.md                 ← /illustrate <大纲/文档>：批量配图（一次确认 → 批量生图 → 回填 → 出 pptx/docx）
 portable/
   PLATFORMS.md                  ← 跨平台接入（Claude Code / Codex / dsh / WorkBuddy / Cursor…）
   agent-prompt.md               ← 通用 agent 提示词（无 skill 系统时直接用）
@@ -70,6 +73,23 @@ portable/
 - **默认输出**：`<用户主目录>\Pictures\seedream`（自动创建，可改）。
 - **内容安全（判定树）**：写提示词 / 编译前对照 [`CONTENT_SAFETY.md`](skills/seedream-prompt-compiler/CONTENT_SAFETY.md)，按**意图 + 语境**分三层：**硬红线 → 拒绝**、**灰区 → 说明风险后交你确认**、其余 → 放行。
 - **图 → 提示词**：给一张图要“反推 / 复刻”，`/draw` 会先派 `@observer` 产出提示词，再走闸门。
+- **批量配图（与 `office` 连通）**：`/illustrate` 读大纲 → 建 `job.json` → **一次批量确认 + dry-run 报价** → 批量生图 → 回填 deck → 出 pptx/docx。
+
+## 批量配图（与 office 连通）
+
+给 PPT / 报告批量配套图：`office` 侧出“需求”，seedream 侧出“图”，用 **JSON 契约**解耦。
+
+```
+office(识别缺图)  --job.json-->  seedream(批量生成)  --result.json-->  office(回填并组装)
+```
+
+- **需求 `illustration_job.json`**：`style`（全局风格锁）/ `aspect_default` / `model` / `size` / `out_dir` / `items[{id,content,aspect?}]`
+- **结果 `illustration_result.json`**：`items[{id,path,ok,model,size,cost,error}]` + `total_cost`
+- **命令**：`/illustrate <大纲/文档>`；底层 `volcengine-seedream/scripts/illustrate.py`（`gen` / `resolve`）
+- **一次批量确认**：先 `--dry-run` 报价 + 整批内容安全预检 → 你点头 → 批量生成（失败项列出，**不静默重抽**）
+- **回填**：`resolve` 把 deck 规格里的 `image_id` 填成 `image` 路径，交给现成的 `office/scripts/deck.py` 出片
+
+> 设计原则：`office` 与 seedream **各自独立演进**，只通过 JSON 契约对接；人机闸门只保留“一次确认”。
 
 ## 🚀 傻瓜式安装（把这句丢给你的 agent 就行）
 
