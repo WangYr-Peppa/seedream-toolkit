@@ -22,7 +22,7 @@ job.json (office -> seedream):
 result.json (seedream -> office):
 {
   "items": [
-    {"id","path","ok","model","size","aspect","cost","error",
+    {"id","path","ok","model","size","aspect","unit_cost","error",
      "prep","seam_dev","skipped"}
   ],
   "total_cost": 0.24,
@@ -58,6 +58,7 @@ GENERATOR = str(Path(__file__).resolve().parent / "generate_image.py")
 DEFAULT_BG = "#0A0E27"
 DEFAULT_FEATHER_FRAC = 0.06
 DEFAULT_JOBS = 4
+MAX_JOBS = 16
 
 
 def compose_prompt(content: str, style: str | None) -> str:
@@ -137,6 +138,28 @@ def _existing_image(out_dir: Path, iid: str) -> Path | None:
     return None
 
 
+def _parse_saved_line(line: str) -> str | None:
+    """Extract the file path from a generate_image.py 'SAVED:' output line."""
+    stripped = line.strip()
+    if not stripped.startswith("SAVED:"):
+        return None
+    return stripped.split("SAVED:", 1)[1].strip().rsplit("  (seed=", 1)[0]
+
+
+def _compute_total_cost(items: list[dict]) -> tuple[float | None, str]:
+    """Return (total_cost, display_text) for a list of result items.
+
+    Only counts items that are ok and not skipped. If any such item has an
+    unknown unit_cost, total_cost is None and text indicates unknown.
+    """
+    chargable = [it for it in items if it.get("ok") and not it.get("skipped")]
+    has_unknown = any(it.get("unit_cost") is None for it in chargable)
+    if has_unknown:
+        return None, "未知（以控制台为准）"
+    total = sum(it.get("unit_cost", 0.0) or 0.0 for it in chargable)
+    return total, f"¥{total:.2f}"
+
+
 def parse_placements(data: dict) -> list[dict]:
     """Validate and normalize a placements.json dict.
 
@@ -161,7 +184,7 @@ def parse_placements(data: dict) -> list[dict]:
         if not image or not isinstance(image, str):
             raise ValueError(f"placement {idx}: 'image' path is required")
 
-        def _num(key: str, default: float) -> float:
+        def _num(key: str, default: float, positive: bool = False) -> float:
             v = p.get(key, default)
             try:
                 v = float(v)
@@ -169,6 +192,8 @@ def parse_placements(data: dict) -> list[dict]:
                 raise ValueError(f"placement {idx}: '{key}' must be a number") from None
             if v < 0:
                 raise ValueError(f"placement {idx}: '{key}' must be >= 0")
+            if positive and v <= 0:
+                raise ValueError(f"placement {idx}: '{key}' must be > 0")
             return v
 
         out.append(
@@ -177,8 +202,8 @@ def parse_placements(data: dict) -> list[dict]:
                 "image": image,
                 "left": _num("left", 0.0),
                 "top": _num("top", 0.0),
-                "width": _num("width", 1.0),
-                "height": _num("height", 1.0),
+                "width": _num("width", 1.0, positive=True),
+                "height": _num("height", 1.0, positive=True),
                 "remove_pictures": bool(p.get("remove_pictures", False)),
             }
         )
@@ -283,6 +308,8 @@ def _build_item_record(it: dict, job: dict, index: int, results_len: int) -> dic
         "family": family,
         "tier": tier,
         "unit_cost": cost,
+        "bg": it.get("bg"),
+        "float": bool(it.get("float", False)),
         "ok": True,
         "path": None,
         "error": None,
@@ -339,8 +366,9 @@ def _run_one(item_rec: dict, out_dir: str, dry_run: bool, skip_existing: bool,
             rec["error"] = (lines[-1] if lines else "unknown error")[:300]
         else:
             for ln in out.splitlines():
-                if ln.strip().startswith("SAVED:"):
-                    rec["path"] = ln.split("SAVED:", 1)[1].strip().split(" ", 1)[0]
+                parsed = _parse_saved_line(ln)
+                if parsed:
+                    rec["path"] = parsed
                     break
 
     # Optional matte post-processing.
@@ -379,19 +407,55 @@ def run_gen(
     feather_frac: float = DEFAULT_FEATHER_FRAC,
 ) -> int:
     job_path = str(Path(job_path).expanduser())
-    job = json.loads(Path(job_path).read_text(encoding="utf-8"))
+    try:
+        job = json.loads(Path(job_path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"ERROR: invalid job JSON: {e}")
+        return 2
+    except OSError as e:
+        print(f"ERROR: cannot read job file: {e}")
+        return 2
+
+    if not isinstance(job, dict):
+        print("ERROR: job file must be a JSON object")
+        return 2
+
     items = job.get("items") or []
     if not items:
         print("ERROR: job has no items")
         return 2
+    if not isinstance(items, list):
+        print("ERROR: job 'items' must be a list")
+        return 2
+    for idx, it in enumerate(items):
+        if not isinstance(it, dict):
+            print(f"ERROR: item {idx} is not an object")
+            return 2
 
     job_dir = Path(job_path).resolve().parent
     out_dir = out_dir_override or job.get("out_dir") or str(job_dir / "images")
     result_path = result_path or str(Path(job_path).with_suffix("")) + ".result.json"
 
+    if jobs > MAX_JOBS:
+        print(f"WARNING: --jobs {jobs} exceeds max {MAX_JOBS}; clamped (Ark IPM ≈ 500/min, avoid flooding)")
+        jobs = MAX_JOBS
     jobs = max(1, jobs)
 
+    if feather_frac < 0 or feather_frac > 1:
+        print(f"WARNING: --feather-frac {feather_frac} out of [0,1]; clamped")
+        feather_frac = max(0.0, min(1.0, feather_frac))
+
     records = [_build_item_record(it, job, i, i) for i, it in enumerate(items)]
+
+    seen_ids: set[str] = set()
+    dupes: list[str] = []
+    for rec in records:
+        if rec["id"] in seen_ids:
+            dupes.append(rec["id"])
+        seen_ids.add(rec["id"])
+    if dupes:
+        print(f"ERROR: duplicate sanitized id(s): {dupes}")
+        return 2
 
     results: list[dict] = []
     with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as ex:
@@ -413,17 +477,14 @@ def run_gen(
     results.sort(key=lambda t: t[0])
     ordered = [r for _, r in results]
 
-    total = 0.0
-    for rec in ordered:
-        cost = rec.get("unit_cost")
-        if cost:
-            total += cost
-
     failed = sum(1 for r in ordered if not r["ok"])
     skipped = sum(1 for r in ordered if r.get("skipped"))
-    res = {
+
+    total, cost_text = _compute_total_cost(ordered)
+
+    res: dict = {
         "items": ordered,
-        "total_cost": round(total, 2),
+        "total_cost": round(total, 2) if total is not None else None,
         "dry_run": dry_run,
         "out_dir": out_dir,
     }
@@ -434,7 +495,7 @@ def run_gen(
     print(f"result: {result_path}")
     action = "预估费用" if dry_run else ("已出图" if not skipped else "已处理")
     print(
-        f"共 {len(ordered)} 项，失败 {failed} 项，跳过 {skipped} 项；{action} ≈ ¥{res['total_cost']:.2f}"
+        f"共 {len(ordered)} 项，失败 {failed} 项，跳过 {skipped} 项；{action} ≈ {cost_text}"
     )
     return 0 if failed == 0 else 1
 
@@ -444,8 +505,16 @@ def run_gen(
 # --------------------------------------------------------------------------- #
 
 def run_resolve(spec_path: str, result_path: str, out_path: str) -> int:
-    spec = json.loads(Path(spec_path).read_text(encoding="utf-8"))
-    res = json.loads(Path(result_path).read_text(encoding="utf-8"))
+    try:
+        spec = json.loads(Path(spec_path).read_text(encoding="utf-8"))
+        res = json.loads(Path(result_path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"ERROR: invalid JSON: {e}")
+        return 2
+    except OSError as e:
+        print(f"ERROR: cannot read input file: {e}")
+        return 2
+
     img_map = {r["id"]: r["path"] for r in res.get("items", []) if r.get("ok") and r.get("path")}
 
     filled = 0
@@ -488,16 +557,25 @@ def _shape_inventory(slide) -> list[dict]:
     for shape in slide.shapes:
         if not hasattr(shape, "left"):
             continue
-        out.append(
-            {
-                "shape_id": shape.shape_id,
-                "shape_type": str(shape.shape_type),
-                "left_in": round(shape.left / 914400.0, 4),
-                "top_in": round(shape.top / 914400.0, 4),
-                "width_in": round(shape.width / 914400.0, 4),
-                "height_in": round(shape.height / 914400.0, 4),
-            }
-        )
+        try:
+            left = shape.left
+            top = shape.top
+            width = shape.width
+            height = shape.height
+            if None in (left, top, width, height):
+                continue
+            out.append(
+                {
+                    "shape_id": shape.shape_id,
+                    "shape_type": str(shape.shape_type),
+                    "left_in": round(left / 914400.0, 4),
+                    "top_in": round(top / 914400.0, 4),
+                    "width_in": round(width / 914400.0, 4),
+                    "height_in": round(height / 914400.0, 4),
+                }
+            )
+        except Exception:
+            continue
     return out
 
 
@@ -507,8 +585,20 @@ def run_embed(deck_path: str, placements_path: str, out_path: str) -> int:
     if not deck_path.is_file():
         print(f"ERROR: deck not found: {deck_path}")
         return 2
+    if deck_path.resolve() == out_path.resolve():
+        print("ERROR: output pptx must differ from input deck")
+        return 2
 
-    placements = parse_placements(json.loads(Path(placements_path).read_text(encoding="utf-8")))
+    try:
+        raw = json.loads(Path(placements_path).read_text(encoding="utf-8"))
+    except json.JSONDecodeError as e:
+        print(f"ERROR: invalid placements JSON: {e}")
+        return 2
+    except OSError as e:
+        print(f"ERROR: cannot read placements file: {e}")
+        return 2
+
+    placements = parse_placements(raw)
     if not placements:
         print("ERROR: no placements")
         return 2

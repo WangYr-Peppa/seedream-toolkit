@@ -89,6 +89,7 @@ office(识别缺图)  --job.json-->  seedream(批量生成)  --result.json-->  o
 - **一次批量确认**：先 `--dry-run` 报价 + 整批内容安全预检 → 你点头 → 批量生成（失败项列出，**不静默重抽**）
 - **回填**：`resolve` 把 deck 规格里的 `image_id` 填成 `image` 路径，交给现成的 `office/scripts/deck.py` 出片
 - **速度 / 省心**：`gen --jobs 4`（并发生成）、`--skip-existing`（迭代不重复烧钱）
+  - **限流**：方舟图片生成 **IPM = 500 张/分钟**（账号 + 模型版本级），超限报 `429 ModelAccountIpmRateLimitExceeded`（官方建议稍后重试，**且不计费**）。`--jobs 4` 远低于此、安全；**别把 `--jobs` 猛开**。
 - **底色对齐**：`gen --matte --bg '#RRGGBB'`（边框色归一 + 浮动图羽化，并回报 `seam_dev` 接缝偏差 ≈0）
 - **美化已有 PPT**：`illustrate.py embed deck.pptx --placements P.json -o out.pptx`（按坐标插/换图，**在副本上操作**）
 

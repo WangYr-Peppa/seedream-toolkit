@@ -472,6 +472,9 @@ def validate_args(args: argparse.Namespace) -> None:
     if resolved is not None:
         tier = get_size_tier(*resolved)
 
+    if args.aspect is not None and ("x" in args.size.lower() or "X" in args.size):
+        warnings.append(f"--size {args.size} 已显式指定分辨率，--aspect {args.aspect} 被忽略")
+
     if norm is None and not args.model.lower().startswith("doubao-"):
         errors.append(
             f'未知模型名 "{args.model}"，请用 flash/pro/lite/5.0-* 或完整 doubao-* ID'

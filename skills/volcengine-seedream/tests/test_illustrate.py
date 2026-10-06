@@ -205,5 +205,217 @@ class GenDryRunTests(unittest.TestCase):
                 self.assertTrue(it["ok"])
 
 
+class SavedPathParsingTests(unittest.TestCase):
+    def test_simple_path(self):
+        line = "SAVED: /tmp/out/x.png  (seed=42)"
+        self.assertEqual(il._parse_saved_line(line), "/tmp/out/x.png")
+
+    def test_path_with_spaces(self):
+        line = "SAVED: /tmp/my images/foo bar.png  (seed=7)"
+        self.assertEqual(il._parse_saved_line(line), "/tmp/my images/foo bar.png")
+
+    def test_no_saved_prefix(self):
+        self.assertIsNone(il._parse_saved_line("hello world"))
+
+
+class TotalCostTests(unittest.TestCase):
+    def test_ok_items_summed(self):
+        items = [
+            {"ok": True, "skipped": False, "unit_cost": 0.12},
+            {"ok": True, "skipped": False, "unit_cost": 0.60},
+        ]
+        total, text = il._compute_total_cost(items)
+        self.assertAlmostEqual(total, 0.72)
+        self.assertIn("0.72", text)
+
+    def test_skipped_and_failed_not_counted(self):
+        items = [
+            {"ok": True, "skipped": False, "unit_cost": 0.12},
+            {"ok": True, "skipped": True, "unit_cost": 0.60},
+            {"ok": False, "skipped": False, "unit_cost": 0.30},
+        ]
+        total, text = il._compute_total_cost(items)
+        self.assertAlmostEqual(total, 0.12)
+        self.assertIn("0.12", text)
+
+    def test_unknown_cost_makes_total_unknown(self):
+        items = [
+            {"ok": True, "skipped": False, "unit_cost": 0.12},
+            {"ok": True, "skipped": False, "unit_cost": None},
+        ]
+        total, text = il._compute_total_cost(items)
+        self.assertIsNone(total)
+        self.assertIn("未知", text)
+
+
+class ShapeInventoryTests(unittest.TestCase):
+    def test_skips_none_coordinates(self):
+        class Shape:
+            shape_id = 1
+            shape_type = "PICTURE (13)"
+            left = 1000000
+            top = None
+            width = 2000000
+            height = 1500000
+
+        class Slide:
+            shapes = [Shape()]
+
+        self.assertEqual(il._shape_inventory(Slide()), [])
+
+    def test_normal_shape(self):
+        class Shape:
+            shape_id = 2
+            shape_type = "PICTURE (13)"
+            left = 914400
+            top = 914400
+            width = 1828800
+            height = 914400
+
+        class Slide:
+            shapes = [Shape()]
+
+        inv = il._shape_inventory(Slide())
+        self.assertEqual(len(inv), 1)
+        self.assertEqual(inv[0]["left_in"], 1.0)
+
+
+class DuplicateIdTests(unittest.TestCase):
+    def test_duplicate_sanitized_id_errors(self):
+        with tempfile.TemporaryDirectory() as d:
+            job = {"items": [{"id": "a/b"}, {"id": "a b"}]}
+            jp = Path(d) / "job.json"
+            jp.write_text(json.dumps(job), encoding="utf-8")
+            rp = Path(d) / "out.result.json"
+            rc = il.run_gen(str(jp), str(Path(d) / "images"), str(rp), dry_run=True)
+            self.assertEqual(rc, 2)
+
+
+class JsonValidationTests(unittest.TestCase):
+    def test_invalid_job_json(self):
+        with tempfile.TemporaryDirectory() as d:
+            jp = Path(d) / "job.json"
+            jp.write_text("not json", encoding="utf-8")
+            rp = Path(d) / "out.result.json"
+            rc = il.run_gen(str(jp), str(Path(d) / "images"), str(rp), dry_run=True)
+            self.assertEqual(rc, 2)
+
+    def test_item_not_object(self):
+        with tempfile.TemporaryDirectory() as d:
+            job = {"items": ["not-an-object"]}
+            jp = Path(d) / "job.json"
+            jp.write_text(json.dumps(job), encoding="utf-8")
+            rp = Path(d) / "out.result.json"
+            rc = il.run_gen(str(jp), str(Path(d) / "images"), str(rp), dry_run=True)
+            self.assertEqual(rc, 2)
+
+
+class JobsClampTests(unittest.TestCase):
+    def test_jobs_clamped_to_max(self):
+        with tempfile.TemporaryDirectory() as d:
+            job = {"items": [{"id": "a", "content": "cat"}]}
+            jp = Path(d) / "job.json"
+            jp.write_text(json.dumps(job), encoding="utf-8")
+            rp = Path(d) / "out.result.json"
+            rc = il.run_gen(str(jp), str(Path(d) / "images"), str(rp), dry_run=True, jobs=100)
+            self.assertEqual(rc, 0)
+
+
+class FeatherFracClampTests(unittest.TestCase):
+    def test_feather_frac_clamped(self):
+        with tempfile.TemporaryDirectory() as d:
+            job = {"items": [{"id": "a", "content": "cat"}]}
+            jp = Path(d) / "job.json"
+            jp.write_text(json.dumps(job), encoding="utf-8")
+            rp = Path(d) / "out.result.json"
+            rc = il.run_gen(str(jp), str(Path(d) / "images"), str(rp), dry_run=True, feather_frac=-0.5)
+            self.assertEqual(rc, 0)
+
+
+class PlacementDimensionTests(unittest.TestCase):
+    def test_width_must_be_positive(self):
+        data = {"placements": [{"slide": 1, "image": "a.png", "width": 0}]}
+        with self.assertRaisesRegex(ValueError, "width"):
+            il.parse_placements(data)
+
+
+class EmbedValidationTests(unittest.TestCase):
+    def test_output_same_as_deck_errors(self):
+        with tempfile.TemporaryDirectory() as d:
+            deck = Path(d) / "deck.pptx"
+            deck.write_text("fake", encoding="utf-8")
+            placements = Path(d) / "p.json"
+            placements.write_text(json.dumps({"placements": []}), encoding="utf-8")
+            rc = il.run_embed(str(deck), str(placements), str(deck))
+            self.assertEqual(rc, 2)
+
+
+class MatteFloatTests(unittest.TestCase):
+    """End-to-end matte test requiring Pillow + numpy."""
+
+    @classmethod
+    def setUpClass(cls):
+        try:
+            from PIL import Image  # noqa: F401
+            import numpy as np  # noqa: F401
+        except Exception as e:
+            raise unittest.SkipTest(f"Pillow/numpy not available: {e}")
+
+    def test_float_feather_alpha(self):
+        from PIL import Image
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as d:
+            d = Path(d)
+            out_dir = d / "images"
+            out_dir.mkdir()
+            job_path = d / "job.json"
+            result_path = d / "result.json"
+
+            # 100x200 image with border (20,30,50) and interior (100,120,140)
+            arr = np.zeros((100, 200, 3), dtype=np.uint8)
+            arr[:, :] = [100, 120, 140]
+            arr[0, :, :] = [20, 30, 50]
+            arr[-1, :, :] = [20, 30, 50]
+            arr[:, 0, :] = [20, 30, 50]
+            arr[:, -1, :] = [20, 30, 50]
+            Image.fromarray(arr).save(out_dir / "float_test.png")
+
+            job = {
+                "items": [
+                    {"id": "float_test", "content": "synthetic", "float": True, "bg": "#0A0E27"}
+                ]
+            }
+            job_path.write_text(json.dumps(job), encoding="utf-8")
+
+            rc = il.run_gen(
+                str(job_path),
+                str(out_dir),
+                str(result_path),
+                dry_run=False,
+                skip_existing=True,
+                matte=True,
+                feather_frac=0.1,
+                jobs=1,
+            )
+            self.assertEqual(rc, 0)
+
+            prep = out_dir / "_prep" / "float_test.png"
+            self.assertTrue(prep.exists())
+
+            prep_img = Image.open(prep)
+            self.assertEqual(prep_img.mode, "RGBA")
+            prep_arr = np.array(prep_img)
+
+            # center should be fully opaque
+            self.assertEqual(prep_arr[50, 100, 3], 255)
+            # corner (edge) should be nearly transparent due to feather
+            self.assertLess(prep_arr[0, 0, 3], 30)
+
+            res = json.loads(result_path.read_text(encoding="utf-8"))
+            self.assertIsNotNone(res["items"][0]["prep"])
+            self.assertIsNotNone(res["items"][0]["seam_dev"])
+
+
 if __name__ == "__main__":
     unittest.main()
