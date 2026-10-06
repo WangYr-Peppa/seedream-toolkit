@@ -85,9 +85,12 @@ office(识别缺图)  --job.json-->  seedream(批量生成)  --result.json-->  o
 
 - **需求 `illustration_job.json`**：`style`（全局风格锁）/ `aspect_default` / `model` / `size` / `out_dir` / `items[{id,content,aspect?}]`
 - **结果 `illustration_result.json`**：`items[{id,path,ok,model,size,cost,error}]` + `total_cost`
-- **命令**：`/illustrate <大纲/文档>`；底层 `volcengine-seedream/scripts/illustrate.py`（`gen` / `resolve`）
+- **命令**：`/illustrate <大纲/文档>`；底层 `volcengine-seedream/scripts/illustrate.py`（`gen` / `resolve` / `embed`）
 - **一次批量确认**：先 `--dry-run` 报价 + 整批内容安全预检 → 你点头 → 批量生成（失败项列出，**不静默重抽**）
 - **回填**：`resolve` 把 deck 规格里的 `image_id` 填成 `image` 路径，交给现成的 `office/scripts/deck.py` 出片
+- **速度 / 省心**：`gen --jobs 4`（并发生成）、`--skip-existing`（迭代不重复烧钱）
+- **底色对齐**：`gen --matte --bg '#RRGGBB'`（边框色归一 + 浮动图羽化，并回报 `seam_dev` 接缝偏差 ≈0）
+- **美化已有 PPT**：`illustrate.py embed deck.pptx --placements P.json -o out.pptx`（按坐标插/换图，**在副本上操作**）
 
 > 设计原则：`office` 与 seedream **各自独立演进**，只通过 JSON 契约对接；人机闸门只保留“一次确认”。
 

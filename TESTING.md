@@ -99,6 +99,9 @@
 | I1 | `/illustrate <一个 3–4 页的大纲>` | 建 job → **一次批量确认**（N 张 + 风格 + 比例 + 预算）→ dry-run 报价 → 确认后才出图 |
 | I2 | `illustrate.py gen job.json --dry-run` | 逐项 ok/FAIL + 总价，**不花钱** |
 | I3 | 出图后看回填 | `resolve` 把 `image_id` → `image`，`deck.py` 出 pptx |
+| I4 | `gen job.json --dry-run --jobs 4` | 并发预演，逐项 ok/FAIL，**不花钱** |
+| I5 | `gen job.json --matte --bg '#0A0E27'` | 产出 `_prep/<id>.png`，`seam_dev` ≈ 0 |
+| I6 | `embed 原deck.pptx --placements P.json -o 新deck.pptx` | 已有 PPT 按坐标插/换图；打印每页 picture 清单（副本操作，不改原文件） |
 
 ---
 

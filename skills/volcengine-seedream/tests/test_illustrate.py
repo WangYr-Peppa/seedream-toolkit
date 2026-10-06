@@ -78,5 +78,132 @@ class ResolveTests(unittest.TestCase):
             self.assertNotIn("image", got["slides"][2])               # missing -> no image
 
 
+class ParsePlacementsTests(unittest.TestCase):
+    def test_basic(self):
+        data = {
+            "placements": [
+                {"slide": 1, "image": "a.png", "left": 0, "top": 0, "width": 10, "height": 5.625}
+            ]
+        }
+        got = il.parse_placements(data)
+        self.assertEqual(len(got), 1)
+        self.assertEqual(got[0]["slide"], 1)
+        self.assertEqual(got[0]["image"], "a.png")
+        self.assertEqual(got[0]["left"], 0.0)
+        self.assertEqual(got[0]["width"], 10.0)
+        self.assertEqual(got[0]["height"], 5.625)
+        self.assertFalse(got[0]["remove_pictures"])
+
+    def test_defaults(self):
+        data = {"placements": [{"slide": 2, "image": "b.png"}]}
+        got = il.parse_placements(data)
+        self.assertEqual(got[0]["slide"], 2)
+        self.assertEqual(got[0]["left"], 0.0)
+        self.assertEqual(got[0]["top"], 0.0)
+        self.assertEqual(got[0]["width"], 1.0)
+        self.assertEqual(got[0]["height"], 1.0)
+        self.assertFalse(got[0]["remove_pictures"])
+
+    def test_remove_pictures_true(self):
+        data = {"placements": [{"slide": 1, "image": "b.png", "remove_pictures": True}]}
+        got = il.parse_placements(data)
+        self.assertTrue(got[0]["remove_pictures"])
+
+    def test_invalid_slide_zero(self):
+        data = {"placements": [{"slide": 0, "image": "a.png"}]}
+        with self.assertRaisesRegex(ValueError, "slide"):
+            il.parse_placements(data)
+
+    def test_missing_image(self):
+        data = {"placements": [{"slide": 1}]}
+        with self.assertRaisesRegex(ValueError, "image"):
+            il.parse_placements(data)
+
+    def test_negative_dimension(self):
+        data = {"placements": [{"slide": 1, "image": "a.png", "width": -1}]}
+        with self.assertRaisesRegex(ValueError, "width"):
+            il.parse_placements(data)
+
+    def test_not_a_list(self):
+        data = {"placements": "nope"}
+        with self.assertRaisesRegex(ValueError, "list"):
+            il.parse_placements(data)
+
+    def test_missing_key(self):
+        data = {}
+        with self.assertRaisesRegex(ValueError, "placements"):
+            il.parse_placements(data)
+
+
+class ShouldSkipTests(unittest.TestCase):
+    def test_missing_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            self.assertFalse(il.should_skip(Path(d) / "nonexistent.png"))
+
+    def test_empty_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "empty.png"
+            p.write_text("", encoding="utf-8")
+            self.assertFalse(il.should_skip(p))
+
+    def test_non_empty_file(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "real.png"
+            p.write_bytes(b"PNG")
+            self.assertTrue(il.should_skip(p))
+
+
+class MattePureTests(unittest.TestCase):
+    def test_parse_bg_with_hash(self):
+        self.assertEqual(il.parse_bg("#0A0E27"), (10, 14, 39))
+
+    def test_parse_bg_without_hash(self):
+        self.assertEqual(il.parse_bg("FFFFFF"), (255, 255, 255))
+
+    def test_parse_bg_invalid(self):
+        with self.assertRaises(ValueError):
+            il.parse_bg("red")
+
+    def test_border_mean_shift(self):
+        self.assertEqual(il.border_mean_shift((12, 14, 39), (10, 14, 40)), (-2, 0, 1))
+
+    def test_apply_shift_clamps(self):
+        self.assertEqual(il.apply_shift((250, 5, 128), (10, -10, 0)), (255, 0, 128))
+
+    def test_seam_deviation(self):
+        self.assertEqual(il.seam_deviation((10, 15, 12), (10, 14, 39)), 27)
+
+    def test_shift_then_deviation_zero(self):
+        bg = (10, 14, 39)
+        border = (12, 18, 30)
+        shift = il.border_mean_shift(border, bg)
+        moved = tuple(border[i] + shift[i] for i in range(3))
+        self.assertEqual(il.seam_deviation(moved, bg), 0)
+
+
+class GenDryRunTests(unittest.TestCase):
+    def test_dry_run_jobs(self):
+        with tempfile.TemporaryDirectory() as d:
+            job = {
+                "items": [
+                    {"id": "a", "content": "cat"},
+                    {"id": "b", "content": "dog"},
+                ]
+            }
+            jp = Path(d) / "job.json"
+            jp.write_text(json.dumps(job), encoding="utf-8")
+            rp = Path(d) / "out.result.json"
+
+            rc = il.run_gen(str(jp), str(Path(d) / "images"), str(rp), dry_run=True, jobs=4)
+            self.assertEqual(rc, 0)
+
+            res = json.loads(rp.read_text(encoding="utf-8"))
+            self.assertTrue(res["dry_run"])
+            self.assertEqual(len(res["items"]), 2)
+            self.assertIn("total_cost", res)
+            for it in res["items"]:
+                self.assertTrue(it["ok"])
+
+
 if __name__ == "__main__":
     unittest.main()
