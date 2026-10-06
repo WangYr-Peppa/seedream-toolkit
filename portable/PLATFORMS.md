@@ -7,7 +7,7 @@
 ## TL;DR
 
 1. 🎯 **`<name>/SKILL.md`（含 `name` + `description` frontmatter）正在成为跨平台事实标准** → 本包的 3 个 `SKILL.md` **几乎原样可移植**。
-2. 🔑 **本包对 opencode 的真正依赖只有两处**：命令 `command/*.md`（bestof/draw/edit/qc）、以及 `seedream-qc` 里的 `@observer` 子 agent。**其余（SKILL.md + Python 脚本）平台中立。**
+2. 🔑 **本包对 opencode 的真正依赖只有两处**：命令 `command/draw.md`、以及 `seedream-qc` 里的 `@observer` 子 agent。**其余（SKILL.md + Python 脚本）平台中立。**
 3. 🐍 **脚本只用 Python3 标准库 + 环境变量 `ARK_API_KEY`** → 任何能执行 shell/python 的 agent 都能用。
 4. ⚠️ **纯对话平台（无工具执行）不能生图** —— 本包需要真正跑脚本、下载图片。
 
@@ -19,7 +19,7 @@
 |---|---|---|
 | `skills/*/SKILL.md` | ❌（跨平台约定） | 复制到平台的 skills 目录即可 |
 | `skills/volcengine-seedream/scripts/generate_image.py` | ❌（Python 标准库） | 直接执行 |
-| `command/*.md`（bestof/draw/edit/qc） | ✅（opencode 命令机制） | 各平台自定义命令/规则，或直接说"出 4 张挑最好" |
+| `command/draw.md` | ✅（opencode 命令机制） | 各平台自定义命令/规则，或直接说"出 4 张挑最好" |
 | `seedream-qc` 里的 `@observer` | ✅（OMO-Slim 子 agent 约定） | 有子 agent → 建一个视觉子 agent；无 → agent 自检，或跳过 QC |
 | `skills.paths` / `opencode.json` | ✅ | 用平台对应机制 |
 
@@ -45,7 +45,7 @@
 
 ### OpenCode（原生）
 
-1. 复制 `skills/*` → `~/.config/opencode/skills/`；`command/*.md` → `~/.config/opencode/command/`。
+1. 复制 `skills/*` → `~/.config/opencode/skills/`；`command/draw.md` → `~/.config/opencode/command/`。
 2. 重启（配置只在启动时加载）。
 3. 若用 oh-my-opencode-slim：给需要的 agent 开 skill 白名单（如 orchestrator 的 `skills: ["*"]`）。
 
@@ -56,7 +56,7 @@ mkdir -p ~/.claude/skills
 cp -r skills/volcengine-seedream        ~/.claude/skills/
 cp -r skills/seedream-prompt-compiler   ~/.claude/skills/
 cp -r skills/seedream-qc                ~/.claude/skills/
-cp command/*.md ~/.claude/commands/ 2>/dev/null || true
+cp command/draw.md ~/.claude/commands/ 2>/dev/null || true
 ```
 - `SKILL.md` 的 `name`/`description` 本来就符合 Claude Skill 约定，**几乎零改动**。
 - code-exec 平台把 QC 的 `@observer` 换成一个视觉子 agent（`~/.claude/agents/`）。

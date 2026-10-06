@@ -48,10 +48,7 @@ skills/
   seedream-qc/                  ← 质量自检闭环 + Best-of-N
     SKILL.md
 command/
-  bestof.md                     ← /bestof <描述>：出 4 张挑最佳
-  draw.md                       ← /draw <描述>：单张文生图（走闸门）
-  edit.md                       ← /edit <指令>：图生图 / 编辑（走闸门）
-  qc.md                         ← /qc <描述>：带自检出图闭环
+  draw.md                       ← /draw <描述>：出图统一入口（文生图 / 图生图·编辑 / 批量挑最佳 / 带自检，全走闸门）
 portable/
   PLATFORMS.md                  ← 跨平台接入（Claude Code / Codex / dsh / WorkBuddy / Cursor…）
   agent-prompt.md               ← 通用 agent 提示词（无 skill 系统时直接用）
@@ -91,7 +88,7 @@ portable/
 
   1) skills/volcengine-seedream/、skills/seedream-prompt-compiler/、skills/seedream-qc/
      → 复制到本平台约定的 skills 目录
-  2) command/*.md（bestof / draw / edit / qc）→ 复制到本平台的自定义命令目录（若不支持命令，改为规则/指令）
+  2) command/draw.md → 复制到本平台的自定义命令目录（若不支持命令，改为规则/指令）
   3) 确认环境变量 ARK_API_KEY 已设置，且账号已开通要用的 Seedream 模型
   4) 装完汇报：放了哪些文件 / 是否需要重启 / 怎么自查安装成功
 
@@ -112,10 +109,7 @@ portable/
    ~/.config/opencode/skills/volcengine-seedream/
    ~/.config/opencode/skills/seedream-prompt-compiler/
    ~/.config/opencode/skills/seedream-qc/
-   ~/.config/opencode/command/bestof.md
    ~/.config/opencode/command/draw.md
-   ~/.config/opencode/command/edit.md
-   ~/.config/opencode/command/qc.md
    ```
    （或把 `skills/` 加进 `opencode.json` 的 `skills.paths`。）
 2. 设置环境变量 `ARK_API_KEY`（火山方舟控制台「API Key 管理」创建）；账号**开通**要用的模型。
@@ -136,8 +130,8 @@ portable/
 
 1. 说一句出图需求 → 看它是否**先停下来**：把**提示词**交你过目，**并逐项问出图参数**（比例 / 参考图 / 单张或批量 / 模型 / 分辨率），**而不是闷头直接出图**。
 2. 说 **`画一张：一只橘猫`** → 看它是否：**先逐项问参数 → 自动 `--dry-run` 报价 → 确认后**用 `flash`+`1.5K` 出 **1 张**并下载到本地；**不自动出第二张**。
-3. 说 **`/bestof <一句话描述>`** → 看它出图前是否先确认、并出 4 张**排序挑出第一名**。
-4. 说 **`带自检出图：<描述>`** → 看它是否走"确认 → 生成 → 视觉体检 → 不合格重抽"（**仅此时才允许自动重抽**）。
+3. 说 **`/draw <一句话描述>`** 并在闸门里选**「4 张挑最佳」** → 看它是否出 4 张并**排序挑出第一名**。
+4. 说 **`/draw <描述>`** 并在闸门里选**「带自检」** → 看它是否走"确认 → 生成 → 视觉体检 → 不合格重抽"（**仅此时才允许自动重抽**）。
 5. 完整测试清单见 [`TESTING.md`](TESTING.md)。
 
 ## 许可证 / License
