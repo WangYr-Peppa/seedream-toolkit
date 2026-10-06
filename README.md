@@ -135,6 +135,14 @@ portable/
 4. 说 **`/draw <描述>`** 并在闸门里选**「带自检」** → 看它是否走"确认 → 生成 → 视觉体检 → 不合格重抽"（**仅此时才允许自动重抽**）。
 5. 完整测试清单见 [`TESTING.md`](TESTING.md)。
 
+## FAQ
+
+- **为什么控制台看不到 Seedream 4.0 / 4.5？** 它们在 **2026-09-24** 被方舟列入**第十批下线**（EOM 停止新购；2026-11-24 EOS 关停），所以**控制台不再放开新开通**；`5.0-lite` 同理。现在**可新开通**的生图模型只有 `5.0-flash` / `5.0-pro`（+ `4.0(20260415)`）。详见[模型下线公告](https://docs.volcengine.com/docs/ark/model-deprecation-notice)。
+- **Ask Gate 提交时卡死 / 按回车没反应？** 这是 **opencode 的已知 bug**（`question` 组件键盘绑定死锁：[#36382](https://github.com/anomalyco/opencode/issues/36382)；修复 PR [#36550](https://github.com/anomalyco/opencode/pull/36550) **未合并**）。触发路径：**在某一问里手动输入自定义答案后，再用鼠标点 "Confirm" 提交**。
+  - **规避**：① 少用鼠标、尽量**纯键盘**在选项里选；② **单次问题数 ≤4、每题选项 ≤4**（本工具包已按此约束）；③ 别在自定义输入后再切到 Confirm。
+  - **卡死后**：`Esc` / `Ctrl+C` 可能全失效 → 关终端，用 **`opencode --continue`** 恢复会话（数据通常没丢）。
+  - **自测**：卡死后**鼠标还能动、键盘全哑** → 命中此 bug；若**鼠标也点不动** → 是桌面版 webview 的另一类问题。
+
 ## 许可证 / License
 
 - 代码与配置（`SKILL.md`、`scripts/`、`command/`）：**MIT**（见 `LICENSE`）。
