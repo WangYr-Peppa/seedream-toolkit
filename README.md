@@ -48,7 +48,7 @@ skills/
   seedream-qc/                  ← 质量自检闭环 + Best-of-N
     SKILL.md
 command/
-  draw.md                       ← /draw <描述>：出图统一入口（文生图 / 图生图·编辑 / 批量挑最佳 / 带自检，全走闸门）
+  draw.md                       ← /draw <描述>：出图统一入口（文生图 / 图生图·编辑 / 批量挑最佳 / 带自检 / 图→提示词，全走闸门）
 portable/
   PLATFORMS.md                  ← 跨平台接入（Claude Code / Codex / dsh / WorkBuddy / Cursor…）
   agent-prompt.md               ← 通用 agent 提示词（无 skill 系统时直接用）
@@ -69,6 +69,7 @@ portable/
 - **出图后自动预览**：成功后自动用系统看图打开（`--no-preview` 关闭）。
 - **默认输出**：`<用户主目录>\Pictures\seedream`（自动创建，可改）。
 - **内容安全（判定树）**：写提示词 / 编译前对照 [`CONTENT_SAFETY.md`](skills/seedream-prompt-compiler/CONTENT_SAFETY.md)，按**意图 + 语境**分三层：**硬红线 → 拒绝**、**灰区 → 说明风险后交你确认**、其余 → 放行。
+- **图 → 提示词**：给一张图要“反推 / 复刻”，`/draw` 会先派 `@observer` 产出提示词，再走闸门。
 
 ## 🚀 傻瓜式安装（把这句丢给你的 agent 就行）
 

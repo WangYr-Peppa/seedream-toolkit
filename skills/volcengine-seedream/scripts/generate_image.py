@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import http.client
 import json
 import mimetypes
 import os
@@ -48,10 +49,6 @@ MODEL_ALIASES = {
     "5.0-lite": "doubao-seedream-5-0-lite-260128",
     "5.0-pro": "doubao-seedream-5-0-pro-260628",
     "5.0-flash": "doubao-seedream-5-0-flash-260915",
-    # short aliases (so `-m flash`/`pro`/`lite` works, matching the Ask Gate model card)
-    "flash": "doubao-seedream-5-0-flash-260915",
-    "pro": "doubao-seedream-5-0-pro-260628",
-    "lite": "doubao-seedream-5-0-lite-260128",
 }
 
 # short alias -> friendly family name (for pricing / validation / summary)
@@ -72,6 +69,14 @@ PRICE_TABLE = {
     ("5.0-pro", "1.5K"): 0.30,
     ("5.0-pro", "2K"): 0.60,
     ("5.0-pro", "4K"): None,      # pro tops out at 2K
+}
+
+# Total-pixel thresholds for price tiers.
+# <2.61M keeps the image in the cheap 1.5K tier.
+TIER_PIXEL_MAX = {
+    "1.5K": 2_610_000,
+    "2K": 4_500_000,    # covers 2048x2048 (4.19M)
+    "4K": 16_900_000,   # covers 4096x4096 (16.78M)
 }
 
 # Aspect presets, keyed by resolution tier. The "1.5K" table keeps total pixels
@@ -107,50 +112,86 @@ def normalize_model_name(model_arg: str) -> str | None:
     Accepts aliases from MODEL_ALIASES or raw Ark model IDs.
     Returns None if the family cannot be determined.
     """
-    if model_arg in ("flash", "pro", "lite"):
-        return f"5.0-{model_arg}"
     if model_arg in BARE_ALIASES:
         return BARE_ALIASES[model_arg]
     if model_arg in MODEL_ALIASES:
-        return model_arg
+        key = model_arg
+        # Friendly aliases map directly to known families.
+        if key in ("flash", "pro", "lite"):
+            return f"5.0-{key}"
+        if key.startswith("5.0-"):
+            return key
+        if key in ("4.0", "4.5", "5.0"):
+            return key
+        # Other aliases (e.g. 3.0-t2i, 4.0-old) are not in the price table.
+        return None
     low = model_arg.lower()
-    if "5-0-flash" in low:
+    if "seedream-5-0-flash" in low:
         return "5.0-flash"
-    if "5-0-lite" in low:
+    if "seedream-5-0-lite" in low:
         return "5.0-lite"
-    if "5-0-pro" in low:
+    if "seedream-5-0-pro" in low:
         return "5.0-pro"
-    if "5-0" in low:
+    if "seedream-5-0" in low:
         return "5.0"
-    if "seedream-4-0" in low or "4-0" in low.replace("_", "-"):
+    if "seedream-4-0" in low:
         return "4.0"
-    if "seedream-4-5" in low or "4-5" in low.replace("_", "-"):
+    if "seedream-4-5" in low:
         return "4.5"
     return None
 
 
-def get_size_tier(size: str) -> str | None:
-    """Map a size argument to a price tier: 1.5K / 2K / 4K."""
+def resolve_size(size: str, aspect: str | None) -> tuple[int, int]:
+    """Parse --size and optional --aspect into (width, height).
+
+    Raises ValueError on invalid format or unsupported combination.
+    """
     s = size.strip().upper()
-    if s in ("1K", "1.5K"):
-        return "1.5K"
-    if s == "2K":
-        return "2K"
-    if s == "4K":
-        return "4K"
+    named_map = {"1K": (1024, 1024), "1.5K": (1536, 1536), "2K": (2048, 2048), "4K": (4096, 4096)}
+
     if "X" in s:
         try:
-            w, h = map(int, s.split("X"))
-            m = max(w, h)
-            if m <= 1536:
-                return "1.5K"
-            if m <= 2048:
-                return "2K"
-            if m <= 4096:
-                return "4K"
-            return None
+            parts = s.split("X")
+            if len(parts) != 2:
+                raise ValueError
+            w, h = map(int, parts)
+            if w <= 0 or h <= 0:
+                raise ValueError
+            return (w, h)
         except Exception:
-            return None
+            raise ValueError(f"--size 格式错误: {size}（仅支持 1K/1.5K/2K/4K 或 WxH）")
+
+    if s not in named_map:
+        raise ValueError(f"--size 不支持: {size}（仅支持 1K/1.5K/2K/4K 或 WxH）")
+
+    if aspect is not None:
+        if s == "4K":
+            raise ValueError("4K 暂不支持 aspect 预设，请改用 -s <WxH> 或去掉 -a")
+        tier = "2K" if s == "2K" else "1.5K"
+        table = ASPECT_PX[tier]
+        if aspect not in table:
+            raise ValueError(
+                f"未知 aspect {aspect}；{tier} 档可选: {', '.join(table)}"
+            )
+        w, h = map(int, table[aspect].split("x"))
+        return (w, h)
+
+    return named_map[s]
+
+
+def get_size_tier(width: int, height: int) -> str | None:
+    """Map a resolved (width, height) to a price tier: 1.5K / 2K / 4K.
+
+    Uses total-pixel thresholds to match the Ark price-tier boundary
+    (<=2.61M pixels -> 1.5K).
+    """
+    pixels = width * height
+    if pixels <= TIER_PIXEL_MAX["1.5K"]:
+        return "1.5K"
+    if pixels <= TIER_PIXEL_MAX["2K"]:
+        return "2K"
+    if pixels <= TIER_PIXEL_MAX["4K"]:
+        return "4K"
     return None
 
 
@@ -164,6 +205,8 @@ def estimate_cost_line(
     tier: str | None,
     n: int,
     has_reference: bool,
+    max_images: int = 1,
+    sequential: bool = False,
 ) -> str:
     """Return a human-readable cost estimate line."""
     if normalized is None or tier is None or normalized in ("4.0", "4.5"):
@@ -181,6 +224,14 @@ def estimate_cost_line(
                 f"预计费用: {normalized} × {n} 张 @{tier} "
                 f"≈ 未知（以控制台实际账单为准）"
             )
+    elif sequential and max_images > 1:
+        low = price * n
+        high = price * n * max_images
+        line = (
+            f"预计费用: {normalized} × {n} 个请求 @{tier}，"
+            f"每张请求最多产出 {max_images} 张，按张计费 "
+            f"≈ ¥{low:.2f} ~ ¥{high:.2f}（以控制台实际账单为准）"
+        )
     else:
         total = price * n
         line = (
@@ -219,17 +270,8 @@ def to_data_url(value: str) -> str:
 
 def build_payload(args: argparse.Namespace) -> dict:
     model = MODEL_ALIASES.get(args.model, args.model)
-
-    size = args.size
-    if args.aspect:
-        if "x" in size.lower():
-            print(f"note: --aspect ignored because --size is explicit ({size})")
-        else:
-            tier = "2K" if size.strip().upper().startswith("2") else "1.5K"
-            table = ASPECT_PX[tier]
-            if args.aspect not in table:
-                sys.exit(f"ERROR: unknown aspect {args.aspect}; choose one of {', '.join(table)}")
-            size = table[args.aspect]
+    width, height = resolve_size(args.size, args.aspect)
+    size = f"{width}x{height}"
 
     payload: dict = {
         "model": model,
@@ -258,38 +300,53 @@ def build_payload(args: argparse.Namespace) -> dict:
     return payload
 
 
-def post_json(url: str, payload: dict, api_key: str, retries: int = 2) -> dict:
+def post_json(url: str, payload: dict, api_key: str, retries: int = 2) -> tuple[dict, dict]:
+    """POST JSON and return (response_dict, payload_used).
+
+    If the server rejects optimize_prompt_options with HTTP 400, retry once
+    without it *without* consuming a retry budget, and the returned payload
+    reflects the removal so the caller can back-propagate it.
+    """
     body = json.dumps(payload).encode("utf-8")
     headers = {
         "Content-Type": "application/json",
         "Authorization": f"Bearer {api_key}",
     }
     last_err: Exception | None = None
-    for attempt in range(retries + 1):
+    attempt = 0
+    network_errors = (
+        urllib.error.URLError,
+        TimeoutError,
+        ConnectionResetError,
+        http.client.RemoteDisconnected,
+    )
+    while attempt <= retries:
         req = urllib.request.Request(url, data=body, headers=headers, method="POST")
         try:
             with urllib.request.urlopen(req, timeout=180) as resp:
-                return json.loads(resp.read().decode("utf-8"))
+                return json.loads(resp.read().decode("utf-8")), payload
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", "replace")
             # If Ark rejects the prompt-optimization param, retry once without it.
+            # This retry does NOT count against the retries budget.
             if (e.code == 400 and "optimize_prompt_options" in payload
                     and "optimize" in detail.lower()):
                 print("note: server rejected optimize_prompt_options; retrying without it")
                 payload.pop("optimize_prompt_options", None)
                 body = json.dumps(payload).encode("utf-8")
-                last_err = RuntimeError(f"HTTP {e.code}: {detail}")
                 continue
             # retry on rate limit / server errors only
             if e.code in (429, 500, 502, 503, 504) and attempt < retries:
                 last_err = RuntimeError(f"HTTP {e.code}: {detail}")
-                time.sleep(2 * (attempt + 1))
+                attempt += 1
+                time.sleep(2 * attempt)
                 continue
             sys.exit(f"ERROR: Ark API returned HTTP {e.code}\n{detail}")
-        except (urllib.error.URLError, TimeoutError) as e:
+        except network_errors as e:
             last_err = e
             if attempt < retries:
-                time.sleep(2 * (attempt + 1))
+                attempt += 1
+                time.sleep(2 * attempt)
                 continue
             sys.exit(f"ERROR: request failed: {e}")
     sys.exit(f"ERROR: request failed after retries: {last_err}")
@@ -308,8 +365,30 @@ def _ext_for(data: bytes) -> str:
     return ".png"
 
 
+def sanitize_filename(name: str) -> str:
+    """Return a safe base name: basename + strip Windows illegal chars."""
+    name = Path(name).name
+    name = re.sub(r'[<>:"/\\|?*]', "", name)
+    name = name.strip()
+    if not name:
+        name = "seedream"
+    return name
+
+
+def unique_path(out_dir: Path, base_name: str, ext: str) -> Path:
+    """Return a non-conflicting output path, adding _1/_2/... before the extension."""
+    target = out_dir / f"{base_name}{ext}"
+    if not target.exists():
+        return target
+    i = 1
+    while True:
+        candidate = out_dir / f"{base_name}_{i}{ext}"
+        if not candidate.exists():
+            return candidate
+        i += 1
+
+
 def save_image(item: dict, out_dir: Path, base_name: str, index: int) -> Path:
-    out_dir.mkdir(parents=True, exist_ok=True)
     suffix = "" if index == 0 else f"_{index + 1}"
 
     if item.get("b64_json"):
@@ -318,28 +397,56 @@ def save_image(item: dict, out_dir: Path, base_name: str, index: int) -> Path:
         url = item.get("url")
         if not url:
             sys.exit(f"ERROR: response has neither url nor b64_json: {item}")
-        with urllib.request.urlopen(url, timeout=180) as resp:
-            data = resp.read()
+        try:
+            with urllib.request.urlopen(url, timeout=180) as resp:
+                data = resp.read()
+        except urllib.error.HTTPError as e:
+            sys.exit(f"ERROR: failed to download image from {url}: HTTP {e.code}")
+        except (urllib.error.URLError, TimeoutError, ConnectionResetError, http.client.RemoteDisconnected) as e:
+            sys.exit(f"ERROR: failed to download image from {url}: {e}")
 
-    target = out_dir / f"{base_name}{suffix}{_ext_for(data)}"
+    ext = _ext_for(data)
+    stem = f"{base_name}{suffix}"
+    target = unique_path(out_dir, stem, ext)
     target.write_bytes(data)
     return target
 
 
 def write_meta(image_path: Path, base_payload: dict, payload: dict, args: argparse.Namespace) -> None:
     """Write a .txt sidecar next to the image so results are reproducible/iterable."""
+    width, height = resolve_size(args.size, args.aspect)
     meta = {
         "model": base_payload["model"],
         "prompt": base_payload["prompt"],
         "size": base_payload["size"],
+        "resolved_size": f"{width}x{height}",
         "seed": payload.get("seed", -1),
         "aspect": args.aspect,
         "prompt_mode": args.prompt_mode,
         "watermark": base_payload["watermark"],
         "refs": args.image or [],
+        "n": args.n,
+        "sequential": args.sequential,
+        "max_images": args.max_images,
+        "web_search": args.web_search,
+        "endpoint": DEFAULT_ENDPOINT,
     }
     sidecar = image_path.with_name(image_path.name + ".txt")
     sidecar.write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def ensure_output_writable(out_dir: Path) -> None:
+    """Create output dir and verify it is writable before any API call."""
+    try:
+        out_dir.mkdir(parents=True, exist_ok=True)
+    except OSError as e:
+        sys.exit(f"ERROR: cannot create output directory: {out_dir}\n{e}")
+    probe = out_dir / ".seedream_write_probe"
+    try:
+        probe.write_text("probe", encoding="utf-8")
+        probe.unlink()
+    except OSError as e:
+        sys.exit(f"ERROR: output directory is not writable: {out_dir}\n{e}")
 
 
 def validate_args(args: argparse.Namespace) -> None:
@@ -352,7 +459,18 @@ def validate_args(args: argparse.Namespace) -> None:
     warnings: list[str] = []
 
     norm = normalize_model_name(args.model)
-    tier = get_size_tier(args.size)
+
+    # Size / aspect validation (single source of truth).
+    resolved = None
+    try:
+        resolved = resolve_size(args.size, args.aspect)
+        args._resolved_size = resolved
+    except ValueError as e:
+        errors.append(str(e))
+
+    tier = None
+    if resolved is not None:
+        tier = get_size_tier(*resolved)
 
     if norm is None and not args.model.lower().startswith("doubao-"):
         errors.append(
@@ -361,6 +479,12 @@ def validate_args(args: argparse.Namespace) -> None:
 
     if args.n < 1:
         errors.append("-n 必须 >= 1")
+
+    if args.max_images < 1:
+        errors.append("--max-images 必须 >= 1")
+    elif not args.sequential and args.max_images != 4:
+        # Default 4 without --sequential is the argparse default; only warn when explicitly set.
+        warnings.append("--max-images 仅在配合 --sequential 时生效")
 
     cc = count_chinese_chars(args.prompt)
     if cc > 300:
@@ -408,15 +532,16 @@ def validate_args(args: argparse.Namespace) -> None:
 def print_summary(args: argparse.Namespace) -> None:
     """Print parsed parameters, prompt char count and cost estimate."""
     norm = normalize_model_name(args.model)
-    tier = get_size_tier(args.size)
-    resolved = MODEL_ALIASES.get(args.model, args.model)
+    resolved = getattr(args, "_resolved_size", None)
+    tier = get_size_tier(*resolved) if resolved else None
+    resolved_model = MODEL_ALIASES.get(args.model, args.model)
     out = Path(args.out).expanduser() / args.filename
 
     print("参数摘要:")
     print(f"  prompt: {args.prompt!r}")
     print(f"  prompt 汉字数: {count_chinese_chars(args.prompt)}")
-    print(f"  model: {args.model} -> {resolved}")
-    print(f"  size: {args.size} (tier: {tier or 'unknown'})")
+    print(f"  model: {args.model} -> {resolved_model}")
+    print(f"  size: {args.size} (resolved: {resolved[0]}x{resolved[1] if resolved else 'unknown'}, tier: {tier or 'unknown'})")
     print(f"  aspect: {args.aspect or '(none)'}")
     print(f"  prompt_mode: {args.prompt_mode}")
     print(f"  watermark: {args.watermark}")
@@ -425,7 +550,7 @@ def print_summary(args: argparse.Namespace) -> None:
     print(f"  reference images: {args.image or []}")
     print(f"  web_search: {args.web_search}")
     print(f"  sequential: {args.sequential}, max_images: {args.max_images}")
-    print(estimate_cost_line(norm, tier, args.n, bool(args.image)))
+    print(estimate_cost_line(norm, tier, args.n, bool(args.image), args.max_images, args.sequential))
 
 
 def preview_image(path: Path) -> None:
@@ -475,6 +600,9 @@ def main() -> None:
                    help="do not open the saved image with the default viewer")
     args = p.parse_args()
 
+    # Sanitize output filename before any validation or summary.
+    args.filename = sanitize_filename(args.filename)
+
     validate_args(args)
     print_summary(args)
 
@@ -485,6 +613,10 @@ def main() -> None:
     api_key = read_api_key()
     base_payload = build_payload(args)
     out_dir = Path(args.out).expanduser()
+
+    # Ensure output directory exists and is writable *before* spending money on API calls.
+    ensure_output_writable(out_dir)
+
     print(f"-> model={base_payload['model']} size={base_payload['size']} "
           f"prompt_mode={args.prompt_mode} watermark={base_payload['watermark']} n={args.n}")
 
@@ -494,7 +626,10 @@ def main() -> None:
         if args.seed is not None:
             payload["seed"] = args.seed + i
         seed_used = payload.get("seed", -1)
-        result = post_json(DEFAULT_ENDPOINT, payload, api_key)
+        result, payload_used = post_json(DEFAULT_ENDPOINT, payload, api_key)
+        # Back-propagate optimize removal so the next variant does not retry the same 400.
+        if "optimize_prompt_options" not in payload_used and "optimize_prompt_options" in base_payload:
+            base_payload.pop("optimize_prompt_options", None)
         data = result.get("data") or []
         if not data:
             sys.exit(f"ERROR: empty result: {json.dumps(result, ensure_ascii=False)}")

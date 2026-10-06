@@ -6,6 +6,7 @@ description: 出图统一入口（文生图 / 图生图·编辑 / 批量挑最�
 
 **所有出图都走这一条统一流程**（原 `/draw`、`/edit`、`/qc`、`/bestof` 已合并到这里）：
 
+0. **图 → 提示词（可选）**：若你给了**图片**、要“反推提示词 / 照这张的风格 / 复刻这张图” → 先派 `@observer` 读图，按 `seedream-prompt-compiler` 的「图 → 提示词」模板产出提示词，并把它当作**编译后提示词**继续下面流程。
 1. 按 `seedream-prompt-compiler` 清理提示词（剥元指令 / 抽参数 / 去堆叠；**默认不补全**）。
 2. 🚦 **内容安全预检**：对照 `seedream-prompt-compiler/CONTENT_SAFETY.md` 判定树（硬红线 → 拒绝；灰区 → 说明风险、交用户确认）。
 3. 🚦 **Ask Gate A**：展示「编译后提示词 + diff + 风险」。

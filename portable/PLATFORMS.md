@@ -20,7 +20,7 @@
 | `skills/*/SKILL.md` | ❌（跨平台约定） | 复制到平台的 skills 目录即可 |
 | `skills/volcengine-seedream/scripts/generate_image.py` | ❌（Python 标准库） | 直接执行 |
 | `command/draw.md` | ✅（opencode 命令机制） | 各平台自定义命令/规则，或直接说"出 4 张挑最好" |
-| `seedream-qc` 里的 `@observer` | ✅（OMO-Slim 子 agent 约定） | 有子 agent → 建一个视觉子 agent；无 → agent 自检，或跳过 QC |
+| `@observer`（QC 评分 + 图→提示词反推） | ✅（OMO-Slim 子 agent 约定） | 有子 agent → 建一个视觉子 agent；无 → agent 自检，或跳过 |
 | `skills.paths` / `opencode.json` | ✅ | 用平台对应机制 |
 
 **结论**：**核心（清理规则 + 生成脚本 + Playbook）是平台中立的**；只有"命令"和"质检子 agent"两处需要按平台改写。
