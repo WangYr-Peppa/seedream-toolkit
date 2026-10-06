@@ -39,7 +39,7 @@ python "<skill_dir>/scripts/generate_image.py" -p "一只戴着墨镜的橘猫�
 |---|---|---|
 | `-p/--prompt` | 提示词（必填，中英文均可，建议 ≤300 汉字） | — |
 | `-f/--filename` | 输出文件名（不含扩展名） | `seedream` |
-| `-o/--out` | 输出目录 | 当前目录 |
+| `-o/--out` | 输出目录 | `<用户主目录>\Pictures\seedream`（自动创建） |
 | `-m/--model` | 模型别名或原始 ID（见下） | `doubao-seedream-5-0-flash-260915` |
 | `-s/--size` | `1K`/`1.5K`/`2K` 或 `2048x1152`（5.0-pro 最高 2K，**无 4K**） | `1.5K` |
 | `-a/--aspect` | `1:1 4:3 3:4 16:9 9:16 3:2 2:3 21:9`（按 `--size` 档位自动算像素） | 无 |

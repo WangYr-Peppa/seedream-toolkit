@@ -446,7 +446,8 @@ def main() -> None:
     p = argparse.ArgumentParser(description="Generate images via Volcano Engine Ark Seedream API.")
     p.add_argument("-p", "--prompt", required=True, help="text prompt (Chinese or English)")
     p.add_argument("-f", "--filename", default="seedream", help="output base name (no extension)")
-    p.add_argument("-o", "--out", default=".", help="output directory (default: current dir)")
+    p.add_argument("-o", "--out", default=str(Path.home() / "Pictures" / "seedream"),
+                   help="output directory (default: <home>/Pictures/seedream)")
     p.add_argument("-m", "--model", default="doubao-seedream-5-0-flash-260915",
                    help="model alias (4.0/4.5/5.0/5.0-lite/5.0-pro/5.0-flash/3.0-t2i) or raw model ID")
     p.add_argument("-s", "--size", default="1.5K",
