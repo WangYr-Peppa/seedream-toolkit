@@ -52,14 +52,20 @@ python "<skill_dir>/scripts/generate_image.py" -p "一只戴着墨镜的橘猫�
 | `-n/--n N` | 一次出 N 个变体抽卡（配合 `--seed` 用 seed, seed+1…）；**成本 × N** | `1` |
 | `--save-meta` | 在每张图旁写 `.txt` 元数据（提示词/参数/seed）便于复现 | 关 |
 
-模型别名（本机 cn-beijing 账号 2026-10 实测可用性）：
+模型别名（cn-beijing，2026-10 实测；状态 = `GET /api/v3/models`，下线段落 = 方舟《模型下线公告》第十批 2026-09-24）：
 
-- `5.0-flash` → `doubao-seedream-5-0-flash-260915` ✅ 可用（默认，最便宜）
-- `5.0-pro` → `doubao-seedream-5-0-pro-260628` ✅ 可用（质量 / 编辑）
-- `4.0` → `doubao-seedream-4-0-20260415` ⭕ 可开通（4K 用）
-- `5.0-lite` / `4.5` / `5.0` / `3.0-t2i` → 各自旧 ID ❌ 本机 `NotFound`（未上线 / 已下线）
+- `5.0-flash` → `doubao-seedream-5-0-flash-260915` ✅ **可新开通**（默认，最便宜）
+- `5.0-pro`   → `doubao-seedream-5-0-pro-260628` ✅ **可新开通**（质量 / 编辑）
+- `4.0`       → `doubao-seedream-4-0-20260415` ✅ **在售**（官方指定的 4.0 迁移目标）
+- `5.0`       → `doubao-seedream-5-0-260128` ⚠️ 旧基座 ID，`Retiring`
+- `4.5`       → `doubao-seedream-4-5-251128` ⛔ **已停止新购**（9-24 EOM → 11-24 EOS；4.5 代整体退出，官方迁移到 `5.0-pro`）
+- `4.0-old`   → `doubao-seedream-4-0-250828` ⛔ **已停止新购**（9-24 EOM → 11-24 EOS；迁移到 `4-0-20260415`）
+- `5.0-lite`  → `doubao-seedream-5-0-lite-260128` ⛔ **已停止新购**（9-24 EOM → 11-24 EOS；官方迁移到 `5.0-pro`）→ 所以控制台点不开
+- `3.0-t2i`   → `doubao-seedream-3-0-t2i-250415` ❌ **Shutdown**（已下线）
 
-> **模型可用性提示**：调用未开通的模型会返回 `ModelNotOpen` —— 需先在火山方舟控制台「开通管理」激活。实测（2026-10）`flash`、`pro` 通常可用；`lite` / `4.5` / `3.0` 在部分账号/区域返回 `NotFound`（未上线或已下线）。**以控制台或 `/api/v3/models` 的 `status`（空=可用）为准。**
+> **可用性速记**：现在**可新开通**的生图模型只有 **`5-0-flash-260915` / `5-0-pro-260628`（+ `4-0-20260415`）**；`lite` / `4.5` / 旧 `4.0` 已被官方列入下线批次（9-24 停新购、11-24 关停）。
+> 来源：模型下线公告 https://docs.volcengine.com/docs/ark/model-deprecation-notice ｜模型列表 https://docs.volcengine.com/docs/ark/model-list
+> 兜底：调用未开通模型会返回 `ModelNotOpen`/`NotFound`；**以控制台或 `/api/v3/models` 的 `status`（空=可用）为准**。
 
 ## 图生图 / 图像编辑（把已有图片交给模型）
 
